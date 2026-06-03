@@ -1,0 +1,179 @@
+#!/usr/bin/env python3
+"""View the contents of a BIDS physio .tsv or .tsv.gz file.
+
+Plots each column as a trace with sample value (intensity) on the vertical
+axis and row index (or time, if a JSON sidecar is found) on the horizontal
+axis. Columns are drawn in stacked, x-linked subplots so traces with very
+different scales (e.g. a ~2000-unit cardiac signal and a 0/1 trigger) are
+each readable.
+
+BIDS physio TSV files have no header row, but this script is robust to a
+stray header or other non-numeric values: any cell that does not parse as a
+number becomes NaN (a gap in the trace), and a leading all-non-numeric row is
+treated as column labels.
+
+Usage:
+    python viewtsv /path/to/file.tsv[.gz] [-o out.png]
+"""
+
+import argparse
+import gzip
+import json
+import os
+import sys
+
+
+def open_text(path):
+    """Open a plain or gzip-compressed text file transparently."""
+    if path.endswith(".gz"):
+        return gzip.open(path, "rt")
+    return open(path, "rt")
+
+
+def to_float(token):
+    """Parse a cell as float, returning NaN for blank/non-numeric values."""
+    token = token.strip()
+    if token == "" or token.lower() in ("n/a", "na", "nan"):
+        return float("nan")
+    try:
+        return float(token)
+    except ValueError:
+        return float("nan")
+
+
+def load_tsv(path):
+    """Return (data, header) where data is a list of float columns.
+
+    header is a list of column labels if a leading non-numeric row was found,
+    otherwise None.
+    """
+    rows = []
+    header = None
+    with open_text(path) as f:
+        for lineno, line in enumerate(f):
+            line = line.rstrip("\n").rstrip("\r")
+            if line == "":
+                continue
+            cells = line.split("\t")
+            # A leading row whose cells are all non-numeric is a header.
+            if lineno == 0:
+                parsed = [to_float(c) for c in cells]
+                import math
+                if all(math.isnan(v) for v in parsed) and any(
+                    c.strip() for c in cells
+                ):
+                    header = [c.strip() for c in cells]
+                    continue
+            rows.append([to_float(c) for c in cells])
+
+    if not rows:
+        raise SystemExit(f"viewtsv: no data rows found in {path}")
+
+    ncol = max(len(r) for r in rows)
+    # Pad short rows with NaN so columns are rectangular.
+    cols = [[] for _ in range(ncol)]
+    for r in rows:
+        for c in range(ncol):
+            cols[c].append(r[c] if c < len(r) else float("nan"))
+    return cols, header
+
+
+def find_sidecar(path):
+    """Locate a BIDS JSON sidecar for a .tsv or .tsv.gz file, if present."""
+    base = path
+    for suffix in (".tsv.gz", ".tsv"):
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    json_path = base + ".json"
+    if os.path.isfile(json_path):
+        try:
+            with open(json_path) as f:
+                return json.load(f)
+        except (ValueError, OSError):
+            return None
+    return None
+
+
+def main(argv=None):
+    ap = argparse.ArgumentParser(
+        description="Display a BIDS physio .tsv or .tsv.gz file."
+    )
+    ap.add_argument("tsv", help="path to .tsv or .tsv.gz file")
+    ap.add_argument(
+        "-o", "--out", help="save figure to this path instead of showing a window"
+    )
+    args = ap.parse_args(argv)
+
+    if not os.path.isfile(args.tsv):
+        raise SystemExit(f"viewtsv: file not found: {args.tsv}")
+
+    cols, header = load_tsv(args.tsv)
+
+    sidecar = find_sidecar(args.tsv)
+    labels = header
+    fs = None
+    start = 0.0
+    if sidecar:
+        if not labels and isinstance(sidecar.get("Columns"), list):
+            labels = sidecar["Columns"]
+        fs = sidecar.get("SamplingFrequency")
+        start = sidecar.get("StartTime", 0.0) or 0.0
+
+    # Build the x-axis: seconds if we know the sampling rate, else row index.
+    import numpy as np
+
+    nrow = len(cols[0])
+    if fs:
+        x = start + np.arange(nrow) / float(fs)
+        xlabel = "Time (s)"
+    else:
+        x = np.arange(nrow)
+        xlabel = "Row (sample index)"
+
+    import matplotlib
+
+    if args.out:
+        matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    ncol = len(cols)
+    fig, axes = plt.subplots(
+        ncol, 1, sharex=True, figsize=(11, max(2.2 * ncol, 3)), squeeze=False
+    )
+    axes = axes[:, 0]
+
+    for i, (ax, col) in enumerate(zip(axes, cols)):
+        y = np.asarray(col, dtype=float)
+        ax.plot(x, y, linewidth=0.8)
+        label = (
+            labels[i] if labels and i < len(labels) else f"column {i}"
+        )
+        ax.set_ylabel(label)
+        ax.grid(True, alpha=0.3)
+        finite = np.isfinite(y).sum()
+        if finite < y.size:
+            ax.text(
+                0.99,
+                0.95,
+                f"{y.size - finite} non-numeric",
+                transform=ax.transAxes,
+                ha="right",
+                va="top",
+                fontsize=8,
+                color="crimson",
+            )
+
+    axes[-1].set_xlabel(xlabel)
+    fig.suptitle(os.path.basename(args.tsv))
+    fig.tight_layout()
+
+    if args.out:
+        fig.savefig(args.out, dpi=120)
+        print(f"viewtsv: wrote {args.out}")
+    else:
+        plt.show()
+
+
+if __name__ == "__main__":
+    main()
