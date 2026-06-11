@@ -46,7 +46,22 @@ else:
 
 `dcm2niix` (since the fix referenced by this validation set) follows the Siemens-reference policy: rows with a `*_TRIGGER` SIGNAL token are dropped from the sample stream rather than pushed in as `VALUE=2048`. The result is a clean cardiac/respiratory waveform with no 2048 spikes. This repository's `Ref/*_recording-cardiac_physio.tsv.gz` and `*_recording-respiratory_physio.tsv.gz` are the validated targets — `batch.sh` will diff freshly-converted output against them.
 
-The captured `PULS_TRIGGER` / `RESP_TRIGGER` tics are also surfaced in the trigger column (column 2) at the nearest BIDS sample. Both cardiac peaks (in `cardiac_physio.tsv.gz`) and respiratory peaks (in `respiratory_physio.tsv.gz`) are merged with the scanner volume triggers from `ACQUISITION_INFO` and emitted as `1`. Since cardiac and respiratory live in separate TSVs, the disambiguating codes used by the Siemens reference (`4` for PULS, `8` for RESP, `1` for scanner) collapse to a single `1` here without information loss. The test bundle's `Ref/_7_recording-cardiac_physio.tsv.gz` has 31 non-zero trigger rows (27 cardiac peaks + 4 scanner volumes); `Ref/_7_recording-respiratory_physio.tsv.gz` has 13 (9 respiratory peaks + 4 scanner volumes).
+The captured `PULS_TRIGGER` / `RESP_TRIGGER` tics are surfaced in a **dedicated third column**, not merged into the BIDS-canonical `trigger` column. Each PMU TSV now carries:
+
+| Column | Source | Encoding |
+|---|---|---|
+| 1 | `cardiac` / `respiratory` waveform sample | float (units arbitrary) |
+| 2 | `trigger` — scanner volume start (from `ACQUISITION_INFO`) | `0` / `1` |
+| 3 | `cardiac_trigger` / `respiratory_trigger` — firmware-detected R-wave / respiratory event (from `PULS_TRIGGER` / `RESP_TRIGGER`) | `0` / `1` |
+
+The JSON sidecar's `Columns` array documents the layout:
+```json
+"Columns": ["cardiac", "trigger", "cardiac_trigger"]
+```
+
+This keeps the spec-implied `trigger` semantics (scanner-only — see the BIDS [Physiological recordings](https://bids-specification.readthedocs.io/en/stable/modality-specific-files/physiological-recordings.html) description: *"continuous measurement of the scanner trigger signal"*) byte-compatible with [`bidsphysio`](https://github.com/cbinyu/bidsphysio) for any consumer that hard-codes column 2. The new third column is additive — readers that look up entries by the JSON `Columns` array (the BIDS-recommended pattern) pick it up automatically; readers that expect `n_columns == 2` keep working since the cardiac waveform and scanner trigger are unchanged.
+
+This is the deliberate divergence from bidsphysio: `bidsphysio` discards `PULS_TRIGGER` / `RESP_TRIGGER` entirely (`# we can ignore` at `dcm2bidsphysio.py:213`); `dcm2niix` preserves them on a dedicated channel so HRV / RETROICOR / cardiac-gated noise modelling consumers can use them without inferring peaks from the raw waveform. The test bundle's `Ref/_7_recording-cardiac_physio.tsv.gz` has 4 column-2 entries (scanner volumes) and 27 column-3 entries (PULS_TRIGGER); `Ref/_7_recording-respiratory_physio.tsv.gz` has 4 column-2 and 9 column-3.
 
 ## Links
 
