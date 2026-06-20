@@ -76,6 +76,7 @@
 	"EffectiveEchoSpacing": 0.000270002,
 	"DerivedVendorReportedEchoSpacing": 0.000540003,
 	"AcquisitionDuration": 33.912,
+	"NumberOfKSpaceTrajectories": 1,
 	"TotalReadoutTime": 0.0213301,
 	"PixelBandwidth": 2315,
 	"DwellTime": 2.7e-06,
@@ -147,7 +148,7 @@
 		1,
 		0	],
 	"InPlanePhaseEncodingDirectionDICOM": "COL",
-	"BidsGuess": ["discard","_acq-epfid2p2_run-5_echo-2_localizer"],
+	"BidsGuess": ["func","_acq-epfid2p2_dir-AP_run-5_echo-2_sbref"],
 	"ConversionSoftware": "dcm2niix",
-	"ConversionSoftwareVersion": "v1.0.20260603"
+	"ConversionSoftwareVersion": "v1.0.20260620"
 }

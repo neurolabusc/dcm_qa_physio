@@ -71,6 +71,7 @@
 	"ParallelAcquisitionTechnique": "GRAPPA",
 	"ParallelReductionFactorOutOfPlane": 1,
 	"AcquisitionDuration": 12.345,
+	"NumberOfKSpaceTrajectories": 1,
 	"PixelBandwidth": 539,
 	"DwellTime": 5.8e-06,
 	"ImageOrientationPatientDICOM": [
@@ -83,5 +84,5 @@
 	"InPlanePhaseEncodingDirectionDICOM": "ROW",
 	"BidsGuess": ["discard","_acq-fl3p3_run-1_localizer"],
 	"ConversionSoftware": "dcm2niix",
-	"ConversionSoftwareVersion": "v1.0.20260603"
+	"ConversionSoftwareVersion": "v1.0.20260620"
 }
